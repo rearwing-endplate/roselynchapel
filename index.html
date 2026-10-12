@@ -121,6 +121,8 @@
         <input class="hp" type="text" name="_honey" tabindex="-1" autocomplete="off" aria-hidden="true">
         <input type="hidden" name="_subject" value="New enquiry: Roseminster Abbey">
         <input type="hidden" name="_template" value="table">
+        <input type="hidden" name="_captcha" value="false">
+        <input type="hidden" name="_next" value="">
         <label>Your name<input type="text" name="name" autocomplete="name" required></label>
         <label>Your email<input type="email" name="email" autocomplete="email" required></label>
         <label class="full">What do you need?
@@ -169,18 +171,33 @@
   addEventListener("resize", tick);
   tick();
 
-  // Contact form: sends through FormSubmit, no backend needed
+  // Contact form: seamless send first, with a standard FormSubmit post as a safety net
   const FORM_ENDPOINT = "https://formsubmit.co/ajax/roseminster@poundbridge.co.za";
+  const THANKS = "Thank you. Your message has been sent, and we will reply shortly.";
   const form = document.getElementById("contactForm");
   const statusEl = document.getElementById("formStatus");
   const submitBtn = form.querySelector("button");
+
+  // Where FormSubmit returns people to after a standard post
+  const next = form.elements._next;
+  if (location.protocol.startsWith("http")) {
+    next.value = location.origin + location.pathname + "?sent=1#contact";
+  } else {
+    next.disabled = true;
+  }
+
+  // Thank-you message after coming back from a standard post
+  if (new URLSearchParams(location.search).get("sent") === "1") {
+    statusEl.textContent = THANKS;
+    history.replaceState(null, "", location.pathname + "#contact");
+  }
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     if (form.elements._honey.value) return;
 
     const data = Object.fromEntries(new FormData(form));
-    delete data._honey;
+    ["_honey", "_next", "_captcha"].forEach((k) => delete data[k]);
     submitBtn.disabled = true;
     submitBtn.textContent = "Sending...";
     statusEl.textContent = "";
@@ -192,15 +209,19 @@
         body: JSON.stringify(data),
       });
       const json = await res.json();
-      if (!res.ok || json.success === false || json.success === "false") throw new Error("send failed");
+      if (!res.ok || json.success === false || json.success === "false") {
+        throw new Error(json.message || "send failed");
+      }
       form.reset();
-      statusEl.textContent = "Thank you. Your message has been sent, and we will reply shortly.";
+      statusEl.textContent = THANKS;
     } catch (err) {
-      statusEl.innerHTML = 'We could not send that. Please try again, write to the address below, or use <a href="https://formsubmit.co/el/zufiyu" target="_blank" rel="noopener noreferrer">our hosted form</a>.';
-    } finally {
-      submitBtn.disabled = false;
-      submitBtn.textContent = "Send message";
+      console.error("Seamless send failed, using standard post:", err);
+      statusEl.textContent = "Sending...";
+      form.submit();
+      return;
     }
+    submitBtn.disabled = false;
+    submitBtn.textContent = "Send message";
   });
 </script>
 
